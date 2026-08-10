@@ -7,6 +7,7 @@
 #include <termios.h>
 #include <unistd.h>
 
+#define EDITOR_VERSION "0.1"
 // ascii bits [4:0] represent numerical order of alphabet
 #define CTRL_KEY(k) (k & 0x1f)
 
@@ -144,25 +145,46 @@ void abFree(struct abuf *ab) {
 /** output **/
 
 void editorDrawRows(struct abuf *ab) {
-  for (int y = 0; y < E.screenrows - 1; y++) {
-    abAppend(ab, "~\r\n", 3);
+  for (int y = 0; y < E.screenrows; y++) {
+    // welcome screen
+    if (y == E.screenrows / 3) {
+      char welcome[100];
+      int wlen = snprintf(welcome, sizeof(welcome),
+        "Text editor -- version %s", EDITOR_VERSION);
+      if (wlen > E.screencols) wlen = E.screencols;
+      abAppend(ab, welcome, wlen);
+    }
+    else {
+      abAppend(ab, "~", 1);
+    }
+
+    // (erase in line) to clear residue from last draw
+    abAppend(ab, "\x1b[K", 3);
+    if (y < E.screenrows - 1)
+      abAppend(ab, "\r\n", 2);
   }
-  // I found that the final \n will push past the screen and then our
-  // tildes will escape being cleared by the J escape sequence
-  abAppend(ab, "~", 1);
 }
 
 void editorRefreshScreen() {
   struct abuf ab = ABUF_INIT;
 
-  // https://vt100.net/docs/vt100-ug/chapter3.html#ED
-  abAppend(&ab, "\x1b[2J", 4);
+  // https://vt100.net/docs/vt100-ug/chapter3.html#RM
+  // (reset mode - the parameter ?25 means cursor show/hide)
+  abAppend(&ab, "\x1b[?25l", 6);
+  /* redraw by line instead of full screen */
+  /* // https://vt100.net/docs/vt100-ug/chapter3.html#ED */
+  /* // (erase in display) */
+  /* abAppend(&ab, "\x1b[2J", 4); */
   // https://vt100.net/docs/vt100-ug/chapter3.html#CUP
+  // (cursor position, go to upper left corner)
   abAppend(&ab, "\x1b[1;1H", 6);
 
   editorDrawRows(&ab);
 
   abAppend(&ab, "\x1b[1;1H", 6);
+  // https://vt100.net/docs/vt100-ug/chapter3.html#SM
+  // (set mode - show the cursor)
+  abAppend(&ab, "\x1b[?25h", 6);
 
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
