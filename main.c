@@ -182,7 +182,8 @@ int getWindowSize(int *rows, int *cols) {
   struct winsize ws;
 
   if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-    if (write(STDOUT_FILENO, "\x1b[999B\x1b[999C", 12) != 12) return -1;
+    if (write(STDOUT_FILENO, "\x1b[999B\x1b[999C", 12) != 12)
+      return -1;
     return getCursorPosition(&E.screenrows, &E.screencols);
   }
   else {
@@ -439,7 +440,7 @@ void editorProcessKeypress() {
     E.cx = 0;
     break;
   case END_KEY:
-    E.cx = E.screencols - 1;
+    if (E.cy < E.numrows) E.cx = E.row[E.cy].size;
     break;
 
   case ARROW_LEFT:
