@@ -16,9 +16,7 @@
 
 typedef struct erow {
   int size;
-  int rsize;
   char *chars;
-  char *render;
 } erow;
 
 enum editorKey {
@@ -195,29 +193,7 @@ int getWindowSize(int *rows, int *cols) {
 /** row ops **/
 // char *s is the string to append
 // size_t len is the length of the string
-void editorUpdateRow(erow *row) {
-  int tabs = 0;
-  for (int j = 0; j < row->size; j++) {
-    if (row->chars[j] == '\t') tabs++;
-  }
-
-  free(row->render);
-  row->render = malloc(row->size + tabs*7 + 1);
-
-  int idx = 0;
-  for (int j = 0; j < row->size; j++) {
-    if (row->chars[j] == '\t') {
-      row->render[idx++] = ' ';
-      while (idx % 8 != 0) row->render[idx++] = ' ';
-    } else {
-      row->render[idx++] = row->chars[j];
-    }
-  }
-  row->render[idx] = '\0';
-  row->rsize = idx;
-}
-
-void editorAppendRow(char *s, size_t len) {
+void appendRow(char *s, size_t len) {
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
 
   int at = E.numrows;
@@ -225,11 +201,6 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].chars = malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
-
-  E.row[at].rsize = 0;
-  E.row[at].render = NULL;
-  editorUpdateRow(&E.row[at]);
-
   E.numrows++;
 }
 
@@ -244,7 +215,7 @@ void editorOpen(char *filename) {
   while ((linelen = getline(&line, &linecap, fp)) != -1) {
     while (linelen > 0 && (line[linelen - 1] == '\n' || 
       line[linelen - 1] == '\r')) linelen--;
-    editorAppendRow(line, linelen);
+    appendRow(line, linelen);
   }
   free(line);
   fclose(fp);
@@ -290,7 +261,7 @@ void editorScroll() {
 
 void editorDrawRows(struct abuf *ab) {
   for (int y = 0; y < E.screenrows; y++) {
-    int filerow = y + E.rowoff;
+    int frow = y + E.rowoff;
     // outside text buffer
     if (y >= E.numrows) {
       if (E.numrows == 0 && y == E.screenrows / 3) {
@@ -313,10 +284,10 @@ void editorDrawRows(struct abuf *ab) {
     }
     // inside text buffer
     else {
-      int len = E.row[filerow].rsize - E.coloff;
+      int len = E.row[frow].size - E.coloff;
       if (len < 0) len = 0;
       if (len > E.screencols) len = E.screencols;
-      abAppend(ab, E.row[filerow].render + E.coloff, len);
+      abAppend(ab, E.row[frow].chars + E.coloff, len);
     }
 
     // (erase in line) to clear residue from last draw
