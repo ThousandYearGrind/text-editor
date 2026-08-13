@@ -33,7 +33,7 @@ enum editorKey {
 
 struct editorConfig {
   int cx, cy;
-  int rowoff;
+  int rowoff, coloff;
   int screenrows;
   int screencols;
   int numrows;
@@ -243,6 +243,12 @@ void abFree(struct abuf *ab) {
 
 /** output **/
 void scrollEditor() {
+  if (E.cx < E.coloff) {
+    E.coloff = E.cx;
+  }
+  if (E.cx >= E.coloff + E.screencols) {
+    E.coloff = E.cx - E.screencols + 1;
+  }
   if (E.cy < E.rowoff) {
     E.rowoff = E.cy;
   }
@@ -276,9 +282,10 @@ void editorDrawRows(struct abuf *ab) {
     }
     // inside text buffer
     else {
-      int len = E.row[filerow].size;
+      int len = E.row[filerow].size - E.coloff;
+      if (len < 0) len = 0;
       if (len > E.screencols) len = E.screencols;
-      abAppend(ab, E.row[filerow].chars, len);
+      abAppend(ab, E.row[filerow].chars + E.coloff, len);
     }
 
     // (erase in line) to clear residue from last draw
@@ -307,7 +314,8 @@ void editorRefreshScreen() {
   editorDrawRows(&ab);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+                                            (E.cx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
   // https://vt100.net/docs/vt100-ug/chapter3.html#SM
   // (set mode - show the cursor)
@@ -331,7 +339,7 @@ void editorMoveCursor(int key) {
     if (E.cy != 0) E.cy--;
     break;
   case ARROW_RIGHT:
-    if (E.cx != E.screencols - 1) E.cx++;
+    /*if (E.cx < E.screencols - 1)*/ E.cx++;
     break;
   }
 }
@@ -374,7 +382,10 @@ void editorProcessKeypress() {
 /** init **/
 
 void initEditor() {
-  E.cx = 0; E.cy = 0; E.rowoff = 0; E.numrows = 0; E.row = NULL;
+  E.cx = 0; E.cy = 0;
+  E.rowoff = 0; E.coloff = 0;
+  E.numrows = 0;
+  E.row = NULL;
   
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die ("getWindowSize");
 }
