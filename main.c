@@ -376,7 +376,8 @@ void editorRefreshScreen() {
 /** input **/
 
 void editorMoveCursor(int key) {
-  erow *row = &E.row[E.cy];
+  // Don't want to be able to move right on a row without an erow
+  erow *row = E.cy < E.numrows ? &E.row[E.cy] : NULL;
 
   switch (key) {
   case ARROW_LEFT:
@@ -393,7 +394,7 @@ void editorMoveCursor(int key) {
     if (E.cy != 0) E.cy--;
     break;
   case ARROW_RIGHT:
-    if (E.cx < row->size) E.cx++;
+    if (row && E.cx < row->size) E.cx++;
     else if (E.cy < E.numrows) {
       E.cy++;
       E.cx = 0;
@@ -401,6 +402,7 @@ void editorMoveCursor(int key) {
     break;
   }
   
+  // necessary for if we are going into a line that doesn't have an erow
   row = E.cy < E.numrows ? &E.row[E.cy] : NULL;
   int rowlen = row ? row->size : 0;
   if (E.cx > rowlen) {
@@ -421,9 +423,15 @@ void editorProcessKeypress() {
   case PAGE_UP:
   case PAGE_DOWN:
     {
-      int rows = E.screenrows;
-      while (rows--)
-      editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+      int times = E.screenrows;
+      if (c == PAGE_UP) {
+        E.cy = E.rowoff;
+        while (times--) editorMoveCursor(ARROW_UP);
+      }
+      else if (c == PAGE_DOWN) {
+        E.cy = E.rowoff + E.screenrows - 1;
+        while (times--) editorMoveCursor(ARROW_DOWN);
+      }
     }
     break;
 
