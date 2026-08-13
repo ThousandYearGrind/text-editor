@@ -343,6 +343,18 @@ void editorDrawRows(struct abuf *ab) {
   }
 }
 
+void editorDrawStatusBar(struct abuf *ab) {
+  // SGR VT100 Esc seq, sets terminal to negative colors
+  abAppend(ab, "\x1b[7m", 4);
+  int len = 0;
+  while (len < E.screencols) {
+    abAppend(ab, " ", 1);
+    len++;
+  }
+  // restore the normal coloring
+  abAppend(ab, "\x1b[0m", 4);
+}
+
 void editorRefreshScreen() {
   editorScroll();
 
@@ -360,6 +372,7 @@ void editorRefreshScreen() {
   abAppend(&ab, "\x1b[1;1H", 6);
 
   editorDrawRows(&ab);
+  editorDrawStatusBar(&ab);
 
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
