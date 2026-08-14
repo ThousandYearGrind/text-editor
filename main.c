@@ -42,6 +42,7 @@ struct editorConfig {
   int screencols;
   int numrows;
   erow *row;
+  char *filename;
   struct termios orig_termios;
 };
 
@@ -248,6 +249,9 @@ void editorAppendRow(char *s, size_t len) {
 
 /** file i/o **/
 void editorOpen(char *filename) {
+  free(E.filename);
+  E.filename = strdup(filename);
+
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
 
@@ -346,10 +350,23 @@ void editorDrawRows(struct abuf *ab) {
 void editorDrawStatusBar(struct abuf *ab) {
   // SGR VT100 Esc seq, sets terminal to negative colors
   abAppend(ab, "\x1b[7m", 4);
-  int len = 0;
+  char status[80], rstatus[80];
+
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines", 
+    E.filename ? E.filename : "[No Name]", E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "(%d/%d)",
+    E.cy + 1, E.numrows);
+  if (len > E.screencols) len = E.screencols;
+  abAppend(ab, status, len);
   while (len < E.screencols) {
-    abAppend(ab, " ", 1);
-    len++;
+    if (len + rlen == E.screencols) {
+      abAppend(ab, rstatus, rlen);
+      len += rlen;
+    } 
+    else {
+      abAppend(ab, " ", 1);
+      len++;
+    }
   }
   // restore the normal coloring
   abAppend(ab, "\x1b[0m", 4);
@@ -471,6 +488,7 @@ void initEditor() {
   E.rowoff = 0; E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.filename = NULL;
   
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die ("getWindowSize");
   E.screenrows -= 1;
