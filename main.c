@@ -65,12 +65,12 @@ void die(const char *s) {
   exit(1);
 }
 
-void disableRawMode() {
+void disableRawMode(void) {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
     die("tcsetattr");
 }
 
-void enableRawMode() {
+void enableRawMode(void) {
   if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcsetattr");
   atexit(disableRawMode);
 
@@ -112,7 +112,7 @@ void enableRawMode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
-int editorReadKey() {
+int editorReadKey(void) {
   int nread = 0;
   char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -310,7 +310,7 @@ void abFree(struct abuf *ab) {
 }
 
 /** output **/
-void editorScroll() {
+void editorScroll(void) {
   E.rx = 0;
   if (E.cy < E.numrows) {
     E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
@@ -402,7 +402,7 @@ void editorDrawMessageBar(struct abuf *ab) {
     abAppend(ab, E.statusmsg, strlen(E.statusmsg));
 }
 
-void editorRefreshScreen() {
+void editorRefreshScreen(void) {
   editorScroll();
 
   struct abuf ab = ABUF_INIT;
@@ -479,7 +479,7 @@ void editorMoveCursor(int key) {
   }
 }
 
-void editorProcessKeypress() {
+void editorProcessKeypress(void) {
   int c = editorReadKey();
 
   switch(c) {
@@ -530,7 +530,7 @@ void editorProcessKeypress() {
 
 /** init **/
 
-void initEditor() {
+void initEditor(void) {
   E.cx = 0; E.cy = 0; E.rx = 0;
   E.rowoff = 0; E.coloff = 0;
   E.numrows = 0;
