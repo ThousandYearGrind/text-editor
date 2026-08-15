@@ -251,6 +251,22 @@ void editorAppendRow(char *s, size_t len) {
   E.numrows++;
 }
 
+void editorRowInsertChar(erow *row, int at, int c) {
+  if (at < 0 || at > row->size) 
+    at = row->size;
+  // +2 to make room for null terminator
+  row->chars = realloc(row->chars, row->size + 2);
+  // if at = row->size then it's at the null terminator
+  // note that when an erow is created, row->chars is always at least
+  // a null terminator, even in the case of length 0
+  // the realloc copies the null terminator over
+  // now if we reassign chars[at] it's still a null-terminated string
+  memmove(&row->chars[at+1], &row->chars[at], row->size - at + 1);
+  row->chars[at] = c;
+  row->size++;
+  editorUpdateRow(row);
+}
+
 /** file i/o **/
 void editorOpen(char *filename) {
   free(E.filename);
@@ -500,6 +516,14 @@ void editorProcessKeypress() {
   case ARROW_UP:
   case ARROW_DOWN:
     editorMoveCursor(c);
+    break;
+  default:
+    if (E.cy < E.numrows) editorRowInsertChar(&E.row[E.cy], E.cx, c);
+    else {
+      char *s = (char*) &c;
+      editorAppendRow(s, 1);
+    }
+    editorMoveCursor(ARROW_RIGHT);
     break;
   }
 }
