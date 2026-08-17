@@ -276,6 +276,14 @@ void editorRowInsertChar(erow *row, int at, int c) {
   editorUpdateRow(row);
 }
 
+void editorRowDelChar(erow *row, int at) {
+	if (at < 0 || at >= row->size) return;
+	memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+	row->size--;
+	editorUpdateRow(row);
+	E.dirty++;
+}
+
 /** editor operations **/
 
 void editorInsertChar(int c) {
@@ -285,8 +293,20 @@ void editorInsertChar(int c) {
 	E.dirty++;
 }
 
-void editorDeleteChar(void) {
-	
+void editorDelChar(void) {
+	if (E.cy == E.numrows) return;
+
+	erow *row = &E.row[E.cy];
+	if (E.cx > 0) {
+		editorRowDelChar(row, E.cx - 1);
+		E.cx--;
+	}
+	else {
+		// if at start of line, join the current line
+		// with the line above
+		// 1. copy contents of current row to row above
+		// 2. free the current row
+	}
 }
 
 /** file i/o **/
@@ -575,11 +595,14 @@ void editorProcessKeypress(void) {
 		break;
 
 	case BACKSPACE:
+		editorDelChar();
 		break;
 	case CTRL_KEY('h'):
 		// ASCII 08 is the "backspace" character, which sends the cursor back by one
-		break;
 	case DEL_KEY:
+		// TODO: if we are using delete from an empty row, then remove the current row
+		editorMoveCursor(ARROW_RIGHT);
+		editorDelChar();
 		break;
 
   case PAGE_UP:
