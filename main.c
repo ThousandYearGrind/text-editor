@@ -59,6 +59,7 @@ struct editorConfig E;
 
 /** prototypes **/
 void editorSetStatusMessage(const char *fmt, ...);
+void editorMoveCursor(int c);
 
 /** terminal **/
 
@@ -260,6 +261,20 @@ void editorAppendRow(char *s, size_t len) {
 	E.dirty++;
 }
 
+void editorFreeRow(erow *row) {
+	free(row->chars);
+	free(row->render);
+}
+
+void editorDelRow(int at) {
+	if (at < 0 || at >= E.numrows) return;
+	editorFreeRow(&E.row[at]);
+	int bytes = sizeof(erow) * (E.numrows - at - 1);
+	memmove(&E.row[at], &E.row[at+1], bytes);
+	E.numrows--;
+	E.dirty++;
+}
+
 void editorRowInsertChar(erow *row, int at, int c) {
   if (at < 0 || at > row->size) 
     at = row->size;
@@ -293,8 +308,19 @@ void editorInsertChar(int c) {
 	E.dirty++;
 }
 
+// append string s to row
+void editorRowAppendString(erow *row, char *s, size_t len) {
+	row->chars = realloc(row->chars, row->size + len + 1);
+	memcpy(row->chars + row->size, s, len);
+	row->size += len;
+	row->chars[row->size] = '\0';
+	editorUpdateRow(row);
+	E.dirty++;
+}
+
 void editorDelChar(void) {
 	if (E.cy == E.numrows) return;
+	if (E.cx == 0 && E.cy == 0) return;
 
 	erow *row = &E.row[E.cy];
 	if (E.cx > 0) {
@@ -302,10 +328,10 @@ void editorDelChar(void) {
 		E.cx--;
 	}
 	else {
-		// if at start of line, join the current line
-		// with the line above
-		// 1. copy contents of current row to row above
-		// 2. free the current row
+		E.cx = E.row[E.cy - 1].size;
+		editorRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
+		editorDelRow(E.cy);
+		E.cy--;
 	}
 }
 
@@ -600,9 +626,10 @@ void editorProcessKeypress(void) {
 	case CTRL_KEY('h'):
 		// ASCII 08 is the "backspace" character, which sends the cursor back by one
 	case DEL_KEY:
-		// TODO: if we are using delete from an empty row, then remove the current row
-		editorMoveCursor(ARROW_RIGHT);
-		editorDelChar();
+		if (E.cy != E.numrows - 1 || E.cx != E.row[E.numrows - 1].size) {
+			editorMoveCursor(ARROW_RIGHT);
+			editorDelChar();
+		}
 		break;
 
   case PAGE_UP:
