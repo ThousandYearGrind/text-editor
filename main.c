@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +15,8 @@
 
 #define EDITOR_VERSION "0.1"
 #define TAB_STOP 8
+#define EDITOR_QUIT_TIMES 3
+
 // ascii bits [4:0] represent numerical order of alphabet
 #define CTRL_KEY(k) (k & 0x1f)
 
@@ -25,6 +28,7 @@ typedef struct erow {
 } erow;
 
 enum editorKey {
+	BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -44,6 +48,7 @@ struct editorConfig {
   int screencols;
   int numrows;
   erow *row;
+	int dirty;
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
@@ -51,6 +56,9 @@ struct editorConfig {
 };
 
 struct editorConfig E;
+
+/** prototypes **/
+void editorSetStatusMessage(const char *fmt, ...);
 
 /** terminal **/
 
@@ -127,28 +135,28 @@ int editorReadKey(void) {
     if (seq[0] == '[') {
       seq[2] = 0;
       if (seq[1] >= '0' && seq[1] <= '9') {
-	if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
-	if (seq[2] == '~') {
-	    switch (seq[1]) {
-	    case '1': return HOME_KEY;
-	    case '3': return DEL_KEY;
-	    case '4': return END_KEY;
-	    case '5': return PAGE_UP;
-	    case '6': return PAGE_DOWN;
-	    case '7': return HOME_KEY;
-	    case '8': return END_KEY;
-	    }
-	}
+				if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
+				if (seq[2] == '~') {
+					switch (seq[1]) {
+					case '1': return HOME_KEY;
+					case '3': return DEL_KEY;
+					case '4': return END_KEY;
+					case '5': return PAGE_UP;
+					case '6': return PAGE_DOWN;
+					case '7': return HOME_KEY;
+					case '8': return END_KEY;
+					}
+				}
       }
       else {
-	switch (seq[1]) {
-	case 'A': return ARROW_UP;
-	case 'B': return ARROW_DOWN;
-	case 'C': return ARROW_RIGHT;
-	case 'D': return ARROW_LEFT;
-	case 'H': return HOME_KEY;
-	case 'F': return END_KEY;
-	}
+				switch (seq[1]) {
+				case 'A': return ARROW_UP;
+				case 'B': return ARROW_DOWN;
+				case 'C': return ARROW_RIGHT;
+				case 'D': return ARROW_LEFT;
+				case 'H': return HOME_KEY;
+				case 'F': return END_KEY;
+				}
       }
     } else if (seq[0] == 'O') {
       switch (seq[1]) {
@@ -249,6 +257,7 @@ void editorAppendRow(char *s, size_t len) {
   editorUpdateRow(&E.row[at]);
 
   E.numrows++;
+	E.dirty++;
 }
 
 void editorRowInsertChar(erow *row, int at, int c) {
@@ -267,7 +276,67 @@ void editorRowInsertChar(erow *row, int at, int c) {
   editorUpdateRow(row);
 }
 
+/** editor operations **/
+
+void editorInsertChar(int c) {
+	if (E.cy == E.numrows) editorAppendRow("", 0);
+	editorRowInsertChar(&E.row[E.cy], E.cx, c);
+	E.cx++;
+	E.dirty++;
+}
+
+void editorDeleteChar(void) {
+	
+}
+
 /** file i/o **/
+// caller should free what is returned
+char *editorRowsToString(int *buflen) {
+	int totlen = 0;
+	int j;
+	// pass 1 to determine how many characters to write
+	for (j = 0; j < E.numrows; j++)
+		totlen += E.row[j].size + 1;
+	*buflen = totlen;
+
+	char *buf = malloc(totlen);
+	// buf points to the start of the allocated memory
+	// p allows us to move around in the allocated memory
+	char *p = buf;
+	for (j = 0; j < E.numrows; j++) {
+		memcpy(p, E.row[j].chars, E.row[j].size);
+		p += E.row[j].size;
+		*p = '\n';
+		p++;
+	}
+
+	return buf;
+}
+
+void editorSave(void) {
+	if (E.filename == NULL) return;
+
+	int len;
+	char *buf = editorRowsToString(&len);
+
+	int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+	if (fd != -1) {
+		if (ftruncate(fd, len) != -1) {
+			if (write(fd, buf, len) == len) {
+				close(fd);
+				free(buf);
+				E.dirty = 0;
+				editorSetStatusMessage("%d bytes written to disk", len);
+				return;
+			}
+		}
+		close(fd);
+	}
+
+	free(buf);
+	editorSetStatusMessage("Can't save: I/O error: %s", strerror(errno));
+}
+
 void editorOpen(char *filename) {
   free(E.filename);
   E.filename = strdup(filename);
@@ -285,6 +354,7 @@ void editorOpen(char *filename) {
   }
   free(line);
   fclose(fp);
+	E.dirty = 0;
 }
 
 /** append buffer **/
@@ -372,8 +442,9 @@ void editorDrawStatusBar(struct abuf *ab) {
   abAppend(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
 
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines", 
-    E.filename ? E.filename : "[No Name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", 
+    E.filename ? E.filename : "[No Name]", E.numrows, 
+		E.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "(%d/%d)",
     E.cy + 1, E.numrows);
   if (len > E.screencols) len = E.screencols;
@@ -480,14 +551,36 @@ void editorMoveCursor(int key) {
 }
 
 void editorProcessKeypress(void) {
+	static int quit_times = EDITOR_QUIT_TIMES;
   int c = editorReadKey();
 
   switch(c) {
+	case '\r':
+		break;
+
   case CTRL_KEY('q'):
+		if (E.dirty && quit_times > 0) {
+			editorSetStatusMessage("WARNING: File has unsaved changes. "
+				"Press Ctrl-Q %4d more times to quit.", quit_times);
+			quit_times--;
+			return;
+		}
     write(STDOUT_FILENO, "\x1b[2J", 4);
     write(STDOUT_FILENO, "\x1b[1;1H", 6);
     exit(0);
     break;
+
+	case CTRL_KEY('s'):
+		editorSave();
+		break;
+
+	case BACKSPACE:
+		break;
+	case CTRL_KEY('h'):
+		// ASCII 08 is the "backspace" character, which sends the cursor back by one
+		break;
+	case DEL_KEY:
+		break;
 
   case PAGE_UP:
   case PAGE_DOWN:
@@ -517,15 +610,18 @@ void editorProcessKeypress(void) {
   case ARROW_DOWN:
     editorMoveCursor(c);
     break;
+
+	case CTRL_KEY('l'):
+		// C-l is used to refresh the screen in terminal emulators
+	case '\x1b':
+		break;
+
   default:
-    if (E.cy < E.numrows) editorRowInsertChar(&E.row[E.cy], E.cx, c);
-    else {
-      char *s = (char*) &c;
-      editorAppendRow(s, 1);
-    }
-    editorMoveCursor(ARROW_RIGHT);
+		editorInsertChar(c);
     break;
   }
+
+	quit_times = EDITOR_QUIT_TIMES;
 }
 
 /** init **/
@@ -535,6 +631,7 @@ void initEditor(void) {
   E.rowoff = 0; E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+	E.dirty = 0;
   E.filename = NULL;
   memset(E.statusmsg, 0, sizeof(E.statusmsg));
   E.statusmsg_time = 0;
@@ -550,7 +647,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-Q = quit %d", E.screenrows);
+  editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit");
   
   while (1) {
     editorRefreshScreen();
